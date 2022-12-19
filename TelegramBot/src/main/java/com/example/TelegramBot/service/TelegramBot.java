@@ -14,6 +14,8 @@ import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
 import org.telegram.telegrambots.meta.api.objects.commands.scope.BotCommandScopeDefault;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.sql.Timestamp;
@@ -68,9 +70,10 @@ public class TelegramBot extends TelegramLongPollingBot {
                     start(chatId, update.getMessage().getChat().getFirstName());
                     break;
                 case "/help":
-                    sendMessage(chatId, HELP_TEXT);
+                    sendMessage(chatId, HELP_TEXT, getReplyKeyboardStart());
                     break;
-                default: sendMessage(chatId, "Sorry, not found command.");
+                default:
+                    sendMessage(chatId, "Sorry, not found command.", getReplyKeyboardStart());
             }
         }
     }
@@ -94,18 +97,41 @@ public class TelegramBot extends TelegramLongPollingBot {
         String answer = EmojiParser.parseToUnicode(
                 "Hi, " + name + ". nice to meet you!" + ":christmas_tree:");
         log.info("replied to user " + name);
-        sendMessage(chatId, answer);
+        ReplyKeyboardMarkup keyboardMarkup = getReplyKeyboardStart();
+        sendMessage(chatId, answer, keyboardMarkup);
     }
 
-    private void sendMessage(long chatId, String textToSend) {
+    private void sendMessage(long chatId, String textToSend, ReplyKeyboardMarkup keyboardMarkup) {
         SendMessage sendMessage = new SendMessage();
         sendMessage.setChatId(chatId);
         sendMessage.setText(textToSend);
+
+
+        sendMessage.setReplyMarkup(keyboardMarkup);
         try {
             execute(sendMessage);
         } catch (TelegramApiException telegramApiException) {
-                log.error("error" + telegramApiException.getLocalizedMessage());
+            log.error("error" + telegramApiException.getLocalizedMessage());
 
         }
+    }
+
+    private static ReplyKeyboardMarkup getReplyKeyboardStart() {
+        ReplyKeyboardMarkup keyboardMarkup = new ReplyKeyboardMarkup();
+        List<KeyboardRow> keyboardRows = new ArrayList<>();
+        KeyboardRow row = new KeyboardRow();
+
+        row.add("weather");
+        row.add("get random joke");
+        keyboardRows.add(row);
+
+        row = new KeyboardRow();
+        row.add("register");
+        row.add("check my data");
+        row.add("delete my data");
+        keyboardRows.add(row);
+
+        keyboardMarkup.setKeyboard(keyboardRows);
+        return keyboardMarkup;
     }
 }
