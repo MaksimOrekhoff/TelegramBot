@@ -1,11 +1,14 @@
 package com.example.TelegramBot.service;
 
 import com.example.TelegramBot.config.BotConfig;
+import com.example.TelegramBot.model.Ad;
+import com.example.TelegramBot.model.AdRepository;
 import com.example.TelegramBot.model.User;
 import com.example.TelegramBot.model.UserRepository;
 import com.vdurmont.emoji.EmojiParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
@@ -25,6 +28,7 @@ import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 @Component
 @Slf4j
@@ -33,11 +37,15 @@ public class TelegramBot extends TelegramLongPollingBot {
     public static final String NO_BUTTON = "NO_BUTTON";
     @Autowired
     private UserRepository userRepository;
+    @Autowired
+    private AdRepository adRepository;
     final BotConfig config;
     static final String HELP_TEXT = "This bot is created to demonstrate Spring capabilities.\n\n" +
             "You can execute commands from the main menu on the left or by typing a command:\n\n" +
             "Type /start to see a welcome message\n\n" +
             "Type /mydata to see data stored about yourself\n\n" +
+            "Type /register to register user\n\n" +
+            "Type /deletedata delete data yourself\n\n" +
             "Type /help to see this message again";
 
     public TelegramBot(BotConfig botConfig) {
@@ -48,7 +56,6 @@ public class TelegramBot extends TelegramLongPollingBot {
         botCommands.add(new BotCommand("/register", "register user"));
         botCommands.add(new BotCommand("/deletedata", "delete my data"));
         botCommands.add(new BotCommand("/help", "info how to use this bot"));
-        botCommands.add(new BotCommand("/settings", "set your preferences"));
         botCommands.add(new BotCommand("/send", "newsletter"));
         try {
             this.execute(new SetMyCommands(botCommands, new BotCommandScopeDefault(), null));
@@ -85,6 +92,12 @@ public class TelegramBot extends TelegramLongPollingBot {
                 case "/help":
                     sendMessage(chatId, HELP_TEXT);
                     break;
+                case "/deletedata":
+                    deleteData(chatId);
+                    break;
+                case "/mydata":
+                    mydata(update);
+                    break;
                 case "/register":
                     register(chatId);
                     break;
@@ -93,6 +106,24 @@ public class TelegramBot extends TelegramLongPollingBot {
             }
         } else if (update.hasCallbackQuery()) {
             answerButton(update);
+        }
+    }
+
+    private void deleteData(long chatId) {
+        userRepository.deleteById(chatId);
+        sendMessage(chatId, "Your data has been deleted.");
+    }
+
+    private void mydata(Update update) {
+        Optional<User> user = userRepository.findById(update.getMessage().getChatId());
+        if (user.isEmpty()) {
+            sendMessage(update.getMessage().getChatId(), "You are not registered yet");
+        } else {
+            String string = "UserName: " + (user.get().getUserName() != null ? user.get().getUserName() : "No data.") +
+                    "\nFirstName: " + (user.get().getFirstName() != null ? user.get().getFirstName() : "No data.") +
+                    "\nLastName: " + (user.get().getLastName() != null ? user.get().getLastName() : "No data.") +
+                    "\nUserId: " + user.get().getChatId();
+            sendMessage(update.getMessage().getChatId(), string);
         }
     }
 
@@ -228,5 +259,16 @@ public class TelegramBot extends TelegramLongPollingBot {
 
         keyboardMarkup.setKeyboard(keyboardRows);
         return keyboardMarkup;
+    }
+
+    @Scheduled(cron = "${cron.scheduler}")
+    private void sendAds() {
+        var ads = adRepository.findAll();
+        var users = userRepository.findAll();
+        for (Ad ad : ads) {
+            for (User user : users) {
+                sendMessage(user.getChatId(), ad.getAd());
+            }
+        }
     }
 }
