@@ -49,6 +49,7 @@ public class TelegramBot extends TelegramLongPollingBot {
         botCommands.add(new BotCommand("/deletedata", "delete my data"));
         botCommands.add(new BotCommand("/help", "info how to use this bot"));
         botCommands.add(new BotCommand("/settings", "set your preferences"));
+        botCommands.add(new BotCommand("/send", "newsletter"));
         try {
             this.execute(new SetMyCommands(botCommands, new BotCommandScopeDefault(), null));
         } catch (TelegramApiException e) {
@@ -72,17 +73,9 @@ public class TelegramBot extends TelegramLongPollingBot {
             String messageText = update.getMessage().getText();
             long chatId = update.getMessage().getChatId();
 
-            if (messageText.contains("/send")) {
-                if (Objects.equals(update.getMessage().getChatId(), config.getOwnerId())) {
-                    var textToSend = EmojiParser.parseToUnicode(messageText.substring(messageText.indexOf(" ")));
-                    var users = userRepository.findAll();
-                    for (User u: users) {
-                        sendMessage(u.getChatId(), textToSend, getReplyKeyboardStart());
-                    }
-                } else {
-                    sendMessage(update.getMessage().getChatId(), "Not access.", getReplyKeyboardStart());
-                }
-
+            if (messageText.contains("/send") ) {
+                newsLetter(update, messageText);
+                return;
             }
             switch (messageText) {
                 case "/start":
@@ -90,43 +83,58 @@ public class TelegramBot extends TelegramLongPollingBot {
                     start(chatId, update.getMessage().getChat().getFirstName());
                     break;
                 case "/help":
-                    sendMessage(chatId, HELP_TEXT, getReplyKeyboardStart());
+                    sendMessage(chatId, HELP_TEXT);
                     break;
                 case "/register":
                     register(chatId);
                     break;
                 default:
-                    sendMessage(chatId, "Sorry, not found command.", getReplyKeyboardStart());
+                    sendMessage(chatId, "Sorry, not found command.");
             }
         } else if (update.hasCallbackQuery()) {
-            String callbackData = update.getCallbackQuery().getData();
-            long messageId = update.getCallbackQuery().getMessage().getMessageId();
-            long chatId = update.getCallbackQuery().getMessage().getChatId();
-            if (callbackData.equals(YES_BUTTON)) {
-                String text = "You pressed YES button.";
-                EditMessageText editMessageText = new EditMessageText();
-                editMessageText.setChatId(chatId);
-                editMessageText.setText(text);
-                editMessageText.setMessageId((int) messageId);
+            answerButton(update);
+        }
+    }
 
-                try {
-                    execute(editMessageText);
-                } catch (TelegramApiException telegramApiException) {
-                    log.error("error" + telegramApiException.getLocalizedMessage());
-                }
-            } else if (callbackData.equals(NO_BUTTON)) {
-                String text = "You pressed NO button.";
-                EditMessageText editMessageText = new EditMessageText();
-                editMessageText.setChatId(chatId);
-                editMessageText.setText(text);
-                editMessageText.setMessageId((int) messageId);
-
-                try {
-                    execute(editMessageText);
-                } catch (TelegramApiException telegramApiException) {
-                    log.error("error" + telegramApiException.getLocalizedMessage());
-                }
+    private void newsLetter(Update update, String messageText) {
+        if (Objects.equals(update.getMessage().getChatId(), config.getOwnerId())) {
+            var textToSend = EmojiParser.parseToUnicode(messageText.substring(messageText.indexOf(" ")));
+            var users = userRepository.findAll();
+            for (User u: users) {
+                sendMessage(u.getChatId(), textToSend);
             }
+        } else {
+            sendMessage(update.getMessage().getChatId(), "Not access.");
+        }
+    }
+
+    private void answerButton(Update update) {
+        String callbackData = update.getCallbackQuery().getData();
+        long messageId = update.getCallbackQuery().getMessage().getMessageId();
+        long chatId = update.getCallbackQuery().getMessage().getChatId();
+        if (callbackData.equals(YES_BUTTON)) {
+            String text = "You pressed YES button.";
+            editMessageText((int) messageId, chatId, text);
+        } else if (callbackData.equals(NO_BUTTON)) {
+            String text = "You pressed NO button.";
+            editMessageText((int) messageId, chatId, text);
+        }
+    }
+
+    private void editMessageText(int messageId, long chatId, String text) {
+        EditMessageText editMessageText = new EditMessageText();
+        editMessageText.setChatId(chatId);
+        editMessageText.setText(text);
+        editMessageText.setMessageId(messageId);
+
+        send(editMessageText);
+    }
+
+    private void send(EditMessageText editMessageText) {
+        try {
+            execute(editMessageText);
+        } catch (TelegramApiException telegramApiException) {
+            log.error("error" + telegramApiException.getLocalizedMessage());
         }
     }
 
@@ -135,6 +143,11 @@ public class TelegramBot extends TelegramLongPollingBot {
         message.setChatId(chatId);
         message.setText("Do you really want to register?");
 
+        message.setReplyMarkup(createInlineKeyboardMarkup());
+        sendMess(message);
+    }
+
+    private InlineKeyboardMarkup createInlineKeyboardMarkup() {
         InlineKeyboardMarkup inlineKeyboardMarkup = new InlineKeyboardMarkup();
         List<List<InlineKeyboardButton>> rowsInLine = new ArrayList<>();
         List<InlineKeyboardButton> rowInLine = new ArrayList<>();
@@ -150,15 +163,8 @@ public class TelegramBot extends TelegramLongPollingBot {
         rowInLine.add(noButton);
 
         rowsInLine.add(rowInLine);
-
         inlineKeyboardMarkup.setKeyboard(rowsInLine);
-        message.setReplyMarkup(inlineKeyboardMarkup);
-
-        try {
-            execute(message);
-        } catch (TelegramApiException telegramApiException) {
-            log.error("error" + telegramApiException.getLocalizedMessage());
-        }
+        return inlineKeyboardMarkup;
     }
 
     private void registerUser(Message msg) {
@@ -181,16 +187,23 @@ public class TelegramBot extends TelegramLongPollingBot {
                 "Hi, " + name + ". nice to meet you!" + ":christmas_tree:");
         log.info("replied to user " + name);
         ReplyKeyboardMarkup keyboardMarkup = getReplyKeyboardStart();
-        sendMessage(chatId, answer, keyboardMarkup);
+
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId);
+        message.setText(answer);
+
+        message.setReplyMarkup(keyboardMarkup);
+        sendMess(message);
     }
 
-    private void sendMessage(long chatId, String textToSend, ReplyKeyboardMarkup keyboardMarkup) {
-        SendMessage sendMessage = new SendMessage();
-        sendMessage.setChatId(chatId);
-        sendMessage.setText(textToSend);
+    private void sendMessage(long chatId, String textToSend) {
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId);
+        message.setText(textToSend);
+        sendMess(message);
+    }
 
-
-        sendMessage.setReplyMarkup(keyboardMarkup);
+    private void sendMess(SendMessage sendMessage) {
         try {
             execute(sendMessage);
         } catch (TelegramApiException telegramApiException) {
